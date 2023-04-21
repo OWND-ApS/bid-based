@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "src/ReservoirOracle.sol";
 
+//TODO: Add proxy contract so it's upgradeable
 contract BidProtocol is Ownable, ReservoirOracle {
     using SafeMath for uint256;
 
@@ -14,9 +15,15 @@ contract BidProtocol is Ownable, ReservoirOracle {
 
     event SwapIn(address indexed user, uint256 amountIn, uint256 percentIn);
     event SwapOut(address indexed user, uint256 percentOut, uint256 amountOwed);
+    event Withdrawn(
+        address indexed user,
+        uint256 percentOut,
+        uint256 amountOwed
+    );
 
     error FeeFailed();
     error BidOracleFailed();
+    error NothingToWithdraw();
 
     uint256 private constant MAX_POOL_PERCENT = 100 * 1e18;
     uint256 private constant MAX_PERCENT_OWNERSHIP = 1 * 1e18;
@@ -68,6 +75,11 @@ contract BidProtocol is Ownable, ReservoirOracle {
         _;
     }
 
+    modifier isLiquidated() {
+        require(state == State.Liquidated, "Pool is not active for withdraw");
+        _;
+    }
+
     /**
      * @dev Owner functions
      */
@@ -77,12 +89,40 @@ contract BidProtocol is Ownable, ReservoirOracle {
         revert();
     }
 
-    function init() public payable onlyOwner returns (State) {
+    function init() public payable onlyOwner {
         require(state == State.Inactive, "Pool is already active");
         require(msg.value > 0, "Initial capital can't be 0");
         poolSize = msg.value;
         state = State.Active;
-        return state;
+    }
+
+    function nftLiquidate() public payable onlyOwner {
+        require(
+            state == State.PendingLiquidation,
+            "Pool is not expecting liquidation"
+        );
+        require(msg.value > 0, "Liquidated amount needs to be > 0");
+        liquidatedPool = msg.value;
+        state = State.Liquidated;
+    }
+
+    function lpWithdraw() public isLiquidated onlyOwner {
+        uint256 amountOwed = 0;
+
+        if (poolSize > 0) amountOwed += poolSize;
+        if (percentInPool > 0) {
+            amountOwed += liquidatedPool.mul(percentInPool).div(100 * 1e18);
+        }
+
+        if (amountOwed > 0) {
+            (bool lpSent, ) = msg.sender.call{value: amountOwed}("");
+            require(lpSent, "Failed to send Ether to LP");
+
+            poolSize = 0;
+            percentInPool = 0;
+        } else {
+            revert NothingToWithdraw();
+        }
     }
 
     /**
@@ -137,6 +177,8 @@ contract BidProtocol is Ownable, ReservoirOracle {
     //For now we'll only allow swapping out 100% of stake
     function swapOut(Message calldata message) public isActive {
         uint256 currentUserPercent = addressToPercent[msg.sender];
+        require(currentUserPercent > 0, "User doesn't own any percent");
+
         uint256 bidPrice = getBid(message);
         uint256 amountOwed = bidPrice.mul(currentUserPercent).div(100 * 1e18);
 
@@ -159,6 +201,22 @@ contract BidProtocol is Ownable, ReservoirOracle {
 
             emit SwapOut(msg.sender, currentUserPercent, amountOwed);
         }
+    }
+
+    function userWithdraw() public isLiquidated {
+        uint256 currentUserPercent = addressToPercent[msg.sender];
+        require(currentUserPercent > 0, "User doesn't own any percent");
+
+        uint256 amountOwed = liquidatedPool.mul(currentUserPercent).div(
+            100 * 1e18
+        );
+        (bool userSent, ) = msg.sender.call{value: amountOwed}("");
+        require(userSent, "Failed to send Ether to User");
+
+        liquidatedPool -= amountOwed;
+        addressToPercent[msg.sender] = 0;
+
+        emit Withdrawn(msg.sender, currentUserPercent, amountOwed);
     }
 
     /**
