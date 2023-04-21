@@ -5,7 +5,9 @@ pragma solidity >=0.8.2 <0.9.0;
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract BidProtocol is Ownable {
+import "src/ReservoirOracle.sol";
+
+contract BidProtocol is Ownable, ReservoirOracle {
     using SafeMath for uint256;
 
     event NftLiquidated();
@@ -14,6 +16,7 @@ contract BidProtocol is Ownable {
     event SwapOut(address indexed user, uint256 percentOut, uint256 amountOwed);
 
     error FeeFailed();
+    error BidOracleFailed();
 
     uint256 private constant MAX_POOL_PERCENT = 100 * 1e18;
     uint256 private constant MAX_PERCENT_OWNERSHIP = 1 * 1e18;
@@ -36,6 +39,13 @@ contract BidProtocol is Ownable {
         Liquidated
     }
 
+    enum PriceKind {
+        SPOT,
+        TWAP,
+        LOWER,
+        UPPER
+    }
+
     State public state;
 
     constructor(
@@ -43,7 +53,7 @@ contract BidProtocol is Ownable {
         uint256 _TOKEN_ID,
         address _BID_ORACLE,
         uint256 _SWAP_FEE
-    ) {
+    ) ReservoirOracle(_BID_ORACLE) {
         NFT_CONTRACT = _NFT_CONTRACT;
         TOKEN_ID = _TOKEN_ID;
         BID_ORACLE = _BID_ORACLE;
@@ -62,6 +72,11 @@ contract BidProtocol is Ownable {
      * @dev Owner functions
      */
 
+    function updateReservoirOracleAddress(address) public pure override {
+        // TODO: Should allow owner to update the oracle address
+        revert();
+    }
+
     function init() public payable onlyOwner returns (State) {
         require(state == State.Inactive, "Pool is already active");
         require(msg.value > 0, "Initial capital can't be 0");
@@ -74,8 +89,7 @@ contract BidProtocol is Ownable {
      * @dev User functions
      */
 
-    //TODO: Add signed message as argument here
-    function swapIn() public payable isActive {
+    function swapIn(Message calldata message) public payable isActive {
         require(percentInPool > 0, "No percent left in pool");
         require(msg.value > 0, "Value needs to be above 0");
 
@@ -90,7 +104,8 @@ contract BidProtocol is Ownable {
         uint256 swapInValue = msg.value.sub(feeValue);
 
         //Get bid price in wei
-        uint256 bidPrice = getBid();
+
+        uint256 bidPrice = getBid(message);
 
         uint256 newPercent = swapInValue
             .mul(1e18)
@@ -119,17 +134,12 @@ contract BidProtocol is Ownable {
         emit SwapIn(msg.sender, msg.value, newPercent);
     }
 
-    function swapOut(uint256 _percentOut) public isActive {
-        uint256 percentOut = _percentOut * 1e16;
-
+    //For now we'll only allow swapping out 100% of stake
+    function swapOut(Message calldata message) public isActive {
         uint256 currentUserPercent = addressToPercent[msg.sender];
-        require(
-            percentOut <= currentUserPercent,
-            "You can't swap out more percent than you own"
-        );
+        uint256 bidPrice = getBid(message);
+        uint256 amountOwed = bidPrice.mul(currentUserPercent).div(100 * 1e18);
 
-        uint256 bidPrice = getBid();
-        uint256 amountOwed = bidPrice.mul(percentOut).div(100 * 1e18);
         uint256 feeValue = amountOwed.mul(SWAP_FEE).div(100 * 1e18);
         uint256 userValue = amountOwed.sub(feeValue);
 
@@ -141,13 +151,13 @@ contract BidProtocol is Ownable {
             require(userSent, "Failed to send Ether to User");
 
             poolSize -= amountOwed;
-            percentInPool += percentOut;
-            addressToPercent[msg.sender] -= percentOut;
+            percentInPool += currentUserPercent;
+            addressToPercent[msg.sender] = 0;
 
             (bool feeSent, ) = owner().call{value: feeValue}("");
             if (!feeSent) revert FeeFailed();
 
-            emit SwapOut(msg.sender, percentOut, amountOwed);
+            emit SwapOut(msg.sender, currentUserPercent, amountOwed);
         }
     }
 
@@ -156,8 +166,29 @@ contract BidProtocol is Ownable {
      * @return twap bid from reservoir oracle
      */
 
-    function getBid() internal pure returns (uint256) {
-        return 1 ether;
+    function getBid(Message calldata message) internal view returns (uint256) {
+        // Construct the message id on-chain (using EIP-712 structured-data hashing)
+        bytes32 id = keccak256(
+            abi.encode(
+                keccak256(
+                    "ContractWideCollectionTopBidPrice(uint8 kind,uint256 twapSeconds,address contract)"
+                ),
+                PriceKind.SPOT,
+                86400,
+                NFT_CONTRACT
+            )
+        );
+
+        // Validate the message
+        uint256 maxMessageAge = 5 minutes;
+
+        if (!_verifyMessage(id, maxMessageAge, message)) {
+            revert BidOracleFailed();
+        }
+
+        (, uint256 price) = abi.decode(message.payload, (address, uint256));
+
+        return price;
     }
 
     function getState() public view returns (State) {
