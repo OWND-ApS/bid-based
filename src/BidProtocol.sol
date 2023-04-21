@@ -109,9 +109,12 @@ contract BidProtocol is Ownable, ReservoirOracle {
     function lpWithdraw() public isLiquidated onlyOwner {
         uint256 amountOwed = 0;
 
-        if (poolSize > 0) amountOwed += poolSize;
+        if (poolSize > 0) amountOwed = amountOwed.add(poolSize);
         if (percentInPool > 0) {
-            amountOwed += liquidatedPool.mul(percentInPool).div(100 * 1e18);
+            uint256 lpPoolOwed = liquidatedPool.mul(percentInPool).div(
+                100 * 1e18
+            );
+            amountOwed = amountOwed.add(lpPoolOwed);
         }
 
         if (amountOwed > 0) {
@@ -185,7 +188,7 @@ contract BidProtocol is Ownable, ReservoirOracle {
         uint256 feeValue = amountOwed.mul(SWAP_FEE).div(100 * 1e18);
         uint256 userValue = amountOwed.sub(feeValue);
 
-        if (amountOwed > poolSize) {
+        if (amountOwed < poolSize) {
             state = State.PendingLiquidation;
             emit NftLiquidated();
         } else {
@@ -213,7 +216,6 @@ contract BidProtocol is Ownable, ReservoirOracle {
         (bool userSent, ) = msg.sender.call{value: amountOwed}("");
         require(userSent, "Failed to send Ether to User");
 
-        liquidatedPool -= amountOwed;
         addressToPercent[msg.sender] = 0;
 
         emit Withdrawn(msg.sender, currentUserPercent, amountOwed);
