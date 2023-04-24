@@ -22,11 +22,6 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 amountOwed
     );
 
-    error FeeFailed();
-    error BidOracleFailed();
-    error WithdrawError();
-    error SwapOutFailed();
-
     uint256 private constant MAX_POOL_PERCENT = 100 * 1e18;
     uint256 private constant MAX_PERCENT_OWNERSHIP = 1 * 1e18;
 
@@ -144,9 +139,9 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
             percentInPool = 0;
 
             (bool lpSent, ) = msg.sender.call{value: amountOwed}("");
-            if (!lpSent) revert WithdrawError();
+            if (!lpSent) revert("Withdraw failed");
         } else {
-            revert WithdrawError();
+            revert("Withdraw failed");
         }
     }
 
@@ -197,7 +192,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
         //Consider: save fee value and make owner withdraw at once?
         (bool feeSent, ) = owner().call{value: feeValue}("");
-        if (!feeSent) revert FeeFailed();
+        if (!feeSent) revert("Fee transfer failed");
 
         emit SwapIn(msg.sender, msg.value, newPercent);
     }
@@ -223,10 +218,10 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
             addressToPercent[msg.sender] = 0;
 
             (bool userSent, ) = msg.sender.call{value: userValue}("");
-            if (!userSent) revert SwapOutFailed();
+            if (!userSent) revert("Swap out failed");
 
             (bool feeSent, ) = owner().call{value: feeValue}("");
-            if (!feeSent) revert FeeFailed();
+            if (!feeSent) revert("Fee transfer failed");
 
             emit SwapOut(msg.sender, currentUserPercent, amountOwed);
         }
@@ -243,7 +238,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         addressToPercent[msg.sender] = 0;
 
         (bool userSent, ) = msg.sender.call{value: amountOwed}("");
-        if (!userSent) revert WithdrawError();
+        if (!userSent) revert("Withdraw failed");
 
         emit Withdrawn(msg.sender, currentUserPercent, amountOwed);
     }
@@ -269,7 +264,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 maxMessageAge = 5 minutes;
 
         if (!_verifyMessage(id, maxMessageAge, message)) {
-            revert BidOracleFailed();
+            revert("Bid Oracle failed");
         }
 
         (, uint256 price) = abi.decode(message.payload, (address, uint256));
