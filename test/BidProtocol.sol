@@ -4,8 +4,8 @@ pragma solidity ^0.8.13;
 import "forge-std/Test.sol";
 import "../src/BidProtocol.sol";
 
-contract CounterTest is Test {
-    BidProtocol public counter;
+contract BidTest is Test {
+    BidProtocol public bidContract;
 
     // function setUp() public {
     //     counter = new Counter();

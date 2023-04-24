@@ -4,11 +4,12 @@ pragma solidity >=0.8.2 <0.9.0;
 
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "src/ReservoirOracle.sol";
 
-//TODO: Add proxy contract so it's upgradeable
-contract BidProtocol is Ownable, ReservoirOracle {
+//TODO: Make upgradeable through proxy contract
+contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     using SafeMath for uint256;
 
     event NftLiquidated();
@@ -23,7 +24,8 @@ contract BidProtocol is Ownable, ReservoirOracle {
 
     error FeeFailed();
     error BidOracleFailed();
-    error NothingToWithdraw();
+    error WithdrawError();
+    error SwapOutFailed();
 
     uint256 private constant MAX_POOL_PERCENT = 100 * 1e18;
     uint256 private constant MAX_PERCENT_OWNERSHIP = 1 * 1e18;
@@ -32,6 +34,7 @@ contract BidProtocol is Ownable, ReservoirOracle {
     address public immutable NFT_CONTRACT;
     uint256 public immutable TOKEN_ID;
     uint256 public immutable SWAP_FEE;
+    uint256 public immutable INITIAL_NFT_PRICE;
 
     uint256 public poolSize;
     uint256 public percentInPool = 100 * 1e18;
@@ -59,15 +62,16 @@ contract BidProtocol is Ownable, ReservoirOracle {
         address _NFT_CONTRACT,
         uint256 _TOKEN_ID,
         address _BID_ORACLE,
-        uint256 _SWAP_FEE
+        uint256 _SWAP_FEE,
+        uint256 _INITIAL_NFT_PRICE
     ) ReservoirOracle(_BID_ORACLE) {
         NFT_CONTRACT = _NFT_CONTRACT;
         TOKEN_ID = _TOKEN_ID;
         BID_ORACLE = _BID_ORACLE;
+        INITIAL_NFT_PRICE = _INITIAL_NFT_PRICE;
 
-        //Remember: Swapp fee should be in bps format (10**2)
+        //Remember: Swap fee should be in bps format (10**2)
         SWAP_FEE = _SWAP_FEE * 1e16;
-        // Will ownable constructor still be autocalled?
     }
 
     modifier isActive() {
@@ -81,19 +85,37 @@ contract BidProtocol is Ownable, ReservoirOracle {
     }
 
     /**
-     * @dev Owner functions
+     * LP/Owner functions
      */
 
-    function updateReservoirOracleAddress(address) public pure override {
-        // TODO: Should allow owner to update the oracle address
-        revert();
+    function updateReservoirOracleAddress(
+        address newAddress
+    ) public override onlyOwner {
+        RESERVOIR_ORACLE_ADDRESS = newAddress;
     }
 
     function init() public payable onlyOwner {
         require(state == State.Inactive, "Pool is already active");
         require(msg.value > 0, "Initial capital can't be 0");
+
+        uint256 percentOfNFTValue = msg
+            .value
+            .mul(1e18)
+            .div(INITIAL_NFT_PRICE)
+            .mul(100 * 1e18)
+            .div(1e18);
+        require(
+            percentOfNFTValue >= 25 * 1e18,
+            "Initial capital needs to be 25% or above of initial NFT value"
+        );
+
         poolSize = msg.value;
         state = State.Active;
+    }
+
+    function lpDeployMore() public payable onlyOwner isActive {
+        require(msg.value > 0, "Capital can't be 0");
+        poolSize = poolSize.add(msg.value);
     }
 
     function nftLiquidate() public payable onlyOwner {
@@ -106,7 +128,7 @@ contract BidProtocol is Ownable, ReservoirOracle {
         state = State.Liquidated;
     }
 
-    function lpWithdraw() public isLiquidated onlyOwner {
+    function lpWithdraw() public isLiquidated onlyOwner nonReentrant {
         uint256 amountOwed = 0;
 
         if (poolSize > 0) amountOwed = amountOwed.add(poolSize);
@@ -118,18 +140,18 @@ contract BidProtocol is Ownable, ReservoirOracle {
         }
 
         if (amountOwed > 0) {
-            (bool lpSent, ) = msg.sender.call{value: amountOwed}("");
-            require(lpSent, "Failed to send Ether to LP");
-
             poolSize = 0;
             percentInPool = 0;
+
+            (bool lpSent, ) = msg.sender.call{value: amountOwed}("");
+            if (!lpSent) revert WithdrawError();
         } else {
-            revert NothingToWithdraw();
+            revert WithdrawError();
         }
     }
 
     /**
-     * @dev User functions
+     * User functions
      */
 
     function swapIn(Message calldata message) public payable isActive {
@@ -142,20 +164,21 @@ contract BidProtocol is Ownable, ReservoirOracle {
             "User already owns max percent"
         );
 
-        //Swap in value
+        //Calculate swap in value
         uint256 feeValue = msg.value.mul(SWAP_FEE).div(100 * 1e18);
         uint256 swapInValue = msg.value.sub(feeValue);
 
-        //Get bid price in wei
-
+        //Get bid price in wei from Reservoir oracle
         uint256 bidPrice = getBid(message);
 
+        //Calculate percent without decimals
         uint256 newPercent = swapInValue
             .mul(1e18)
             .div(bidPrice)
             .mul(100 * 1e18)
             .div(1e18);
-        uint256 totalPercent = newPercent.add(currentUserPercent);
+        uint256 totalPercent = currentUserPercent.add(newPercent);
+
         require(
             totalPercent <= MAX_PERCENT_OWNERSHIP,
             "This swap will cause User to exceed max percent"
@@ -166,19 +189,21 @@ contract BidProtocol is Ownable, ReservoirOracle {
         );
 
         //All checks out, update pool and percent
-        poolSize += swapInValue;
-        percentInPool -= totalPercent;
+
+        //Q: Is it too gas heavy to use .add here instead of += ?
+        poolSize = poolSize.add(swapInValue);
+        percentInPool = percentInPool.sub(newPercent);
         addressToPercent[msg.sender] = totalPercent;
 
-        //TODO: Should I instead just save fee value?
+        //Consider: save fee value and make owner withdraw at once?
         (bool feeSent, ) = owner().call{value: feeValue}("");
         if (!feeSent) revert FeeFailed();
 
         emit SwapIn(msg.sender, msg.value, newPercent);
     }
 
-    //For now we'll only allow swapping out 100% of stake
-    function swapOut(Message calldata message) public isActive {
+    //Note: For now we'll only allow swapping out 100% of stake
+    function swapOut(Message calldata message) public isActive nonReentrant {
         uint256 currentUserPercent = addressToPercent[msg.sender];
         require(currentUserPercent > 0, "User doesn't own any percent");
 
@@ -192,12 +217,13 @@ contract BidProtocol is Ownable, ReservoirOracle {
             state = State.PendingLiquidation;
             emit NftLiquidated();
         } else {
-            (bool userSent, ) = msg.sender.call{value: userValue}("");
-            require(userSent, "Failed to send Ether to User");
-
-            poolSize -= amountOwed;
-            percentInPool += currentUserPercent;
+            //Q: Is it again, overdoing it using .add and .sub?
+            poolSize = poolSize.sub(amountOwed);
+            percentInPool = percentInPool.add(currentUserPercent);
             addressToPercent[msg.sender] = 0;
+
+            (bool userSent, ) = msg.sender.call{value: userValue}("");
+            if (!userSent) revert SwapOutFailed();
 
             (bool feeSent, ) = owner().call{value: feeValue}("");
             if (!feeSent) revert FeeFailed();
@@ -206,24 +232,24 @@ contract BidProtocol is Ownable, ReservoirOracle {
         }
     }
 
-    function userWithdraw() public isLiquidated {
+    function userWithdraw() public isLiquidated nonReentrant {
         uint256 currentUserPercent = addressToPercent[msg.sender];
         require(currentUserPercent > 0, "User doesn't own any percent");
 
         uint256 amountOwed = liquidatedPool.mul(currentUserPercent).div(
             100 * 1e18
         );
-        (bool userSent, ) = msg.sender.call{value: amountOwed}("");
-        require(userSent, "Failed to send Ether to User");
 
         addressToPercent[msg.sender] = 0;
+
+        (bool userSent, ) = msg.sender.call{value: amountOwed}("");
+        if (!userSent) revert WithdrawError();
 
         emit Withdrawn(msg.sender, currentUserPercent, amountOwed);
     }
 
     /**
-     * @dev Return bid price from signed message?
-     * @return twap bid from reservoir oracle
+     * Returns bid price from signed message
      */
 
     function getBid(Message calldata message) internal view returns (uint256) {
@@ -251,7 +277,14 @@ contract BidProtocol is Ownable, ReservoirOracle {
         return price;
     }
 
-    function getState() public view returns (State) {
-        return state;
+    /**
+     * Easy getters
+     */
+
+    function getPoolSize() public view returns (uint256) {
+        if (INITIAL_NFT_PRICE > poolSize) return poolSize;
+        else {
+            return poolSize.sub(INITIAL_NFT_PRICE);
+        }
     }
 }

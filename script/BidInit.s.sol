@@ -16,7 +16,7 @@ contract BidInit is Script {
             vm.envAddress("BID_POOL_CONTRACT_ADDRESS")
         );
 
-        uint256 state = uint256(bidPool.getState());
+        uint256 state = uint256(bidPool.state());
         console.log(state);
         bidPool.init{value: 1 ether}();
 
