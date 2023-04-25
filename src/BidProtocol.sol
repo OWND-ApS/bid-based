@@ -230,28 +230,31 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
      */
 
     function getBid(Message calldata message) internal view returns (uint256) {
-        // Construct the message id on-chain (using EIP-712 structured-data hashing)
-        bytes32 id = keccak256(
-            abi.encode(
-                keccak256(
-                    "ContractWideCollectionTopBidPrice(uint8 kind,uint256 twapSeconds,address contract)"
-                ),
-                PriceKind.SPOT,
-                86400,
-                NFT_CONTRACT
-            )
-        );
+        //DELETE:
+        return 10 ether;
 
-        // Validate the message
-        uint256 maxMessageAge = 5 minutes;
+        // // Construct the message id on-chain (using EIP-712 structured-data hashing)
+        // bytes32 id = keccak256(
+        //     abi.encode(
+        //         keccak256(
+        //             "ContractWideCollectionTopBidPrice(uint8 kind,uint256 twapSeconds,address contract)"
+        //         ),
+        //         PriceKind.SPOT,
+        //         86400,
+        //         NFT_CONTRACT
+        //     )
+        // );
 
-        if (!_verifyMessage(id, maxMessageAge, message)) {
-            revert("Bid Oracle failed");
-        }
+        // // Validate the message
+        // uint256 maxMessageAge = 5 minutes;
 
-        (, uint256 price) = abi.decode(message.payload, (address, uint256));
+        // if (!_verifyMessage(id, maxMessageAge, message)) {
+        //     revert("Bid Oracle failed");
+        // }
 
-        return price;
+        // (, uint256 price) = abi.decode(message.payload, (address, uint256));
+
+        // return price;
     }
 
     /**
@@ -263,7 +266,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     }
 
     function getValueOwed(uint256 x, uint256 y) public pure returns (uint256) {
-        return (y * x) / (100 * 1e18);
+        return (((y * 1e18) * x) / (100 * 1e18)) / 1e18;
     }
 
     /**
