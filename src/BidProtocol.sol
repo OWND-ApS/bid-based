@@ -2,7 +2,6 @@
 
 pragma solidity >=0.8.2 <0.9.0;
 
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
@@ -10,8 +9,6 @@ import "src/ReservoirOracle.sol";
 
 //TODO: Make upgradeable through proxy contract
 contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
-    using SafeMath for uint256;
-
     event NftLiquidated();
 
     event SwapIn(address indexed user, uint256 amountIn, uint256 percentIn);
@@ -93,12 +90,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         require(state == State.Inactive, "Pool is already active");
         require(msg.value > 0, "Initial capital can't be 0");
 
-        uint256 percentOfNFTValue = msg
-            .value
-            .mul(1e18)
-            .div(INITIAL_NFT_PRICE)
-            .mul(100 * 1e18)
-            .div(1e18);
+        uint256 percentOfNFTValue = getPercentOf(msg.value, INITIAL_NFT_PRICE);
         require(
             percentOfNFTValue >= 25 * 1e18,
             "Initial capital needs to be 25% or above of initial NFT value"
@@ -110,7 +102,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
     function lpDeployMore() public payable onlyOwner isActive {
         require(msg.value > 0, "Capital can't be 0");
-        poolSize = poolSize.add(msg.value);
+        poolSize += msg.value;
     }
 
     function nftLiquidate() public payable onlyOwner {
@@ -126,12 +118,10 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     function lpWithdraw() public isLiquidated onlyOwner nonReentrant {
         uint256 amountOwed = 0;
 
-        if (poolSize > 0) amountOwed = amountOwed.add(poolSize);
+        if (poolSize > 0) amountOwed += poolSize;
         if (percentInPool > 0) {
-            uint256 lpPoolOwed = liquidatedPool.mul(percentInPool).div(
-                100 * 1e18
-            );
-            amountOwed = amountOwed.add(lpPoolOwed);
+            uint256 lpPoolOwed = getValueOwed(percentInPool, liquidatedPool);
+            amountOwed += lpPoolOwed;
         }
 
         if (amountOwed > 0) {
@@ -160,19 +150,16 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         );
 
         //Calculate swap in value
-        uint256 feeValue = msg.value.mul(SWAP_FEE).div(100 * 1e18);
-        uint256 swapInValue = msg.value.sub(feeValue);
+        uint256 feeValue = getValueOwed(SWAP_FEE, msg.value);
+        uint256 swapInValue = msg.value - feeValue;
 
         //Get bid price in wei from Reservoir oracle
         uint256 bidPrice = getBid(message);
 
         //Calculate percent without decimals
-        uint256 newPercent = swapInValue
-            .mul(1e18)
-            .div(bidPrice)
-            .mul(100 * 1e18)
-            .div(1e18);
-        uint256 totalPercent = currentUserPercent.add(newPercent);
+        uint256 newPercent = getPercentOf(swapInValue, bidPrice);
+        require(newPercent > 0, "Value is below minimum swap in value");
+        uint256 totalPercent = currentUserPercent + newPercent;
 
         require(
             totalPercent <= MAX_PERCENT_OWNERSHIP,
@@ -185,9 +172,8 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
         //All checks out, update pool and percent
 
-        //Q: Is it too gas heavy to use .add here instead of += ?
-        poolSize = poolSize.add(swapInValue);
-        percentInPool = percentInPool.sub(newPercent);
+        poolSize += swapInValue;
+        percentInPool -= newPercent;
         addressToPercent[msg.sender] = totalPercent;
 
         //Consider: save fee value and make owner withdraw at once?
@@ -203,18 +189,17 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         require(currentUserPercent > 0, "User doesn't own any percent");
 
         uint256 bidPrice = getBid(message);
-        uint256 amountOwed = bidPrice.mul(currentUserPercent).div(100 * 1e18);
+        uint256 amountOwed = getValueOwed(currentUserPercent, bidPrice);
 
-        uint256 feeValue = amountOwed.mul(SWAP_FEE).div(100 * 1e18);
-        uint256 userValue = amountOwed.sub(feeValue);
+        uint256 feeValue = getValueOwed(SWAP_FEE, amountOwed);
+        uint256 userValue = amountOwed - feeValue;
 
         if (amountOwed < poolSize) {
             state = State.PendingLiquidation;
             emit NftLiquidated();
         } else {
-            //Q: Is it again, overdoing it using .add and .sub?
-            poolSize = poolSize.sub(amountOwed);
-            percentInPool = percentInPool.add(currentUserPercent);
+            poolSize -= amountOwed;
+            percentInPool += currentUserPercent;
             addressToPercent[msg.sender] = 0;
 
             (bool userSent, ) = msg.sender.call{value: userValue}("");
@@ -231,12 +216,9 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 currentUserPercent = addressToPercent[msg.sender];
         require(currentUserPercent > 0, "User doesn't own any percent");
 
-        uint256 amountOwed = liquidatedPool.mul(currentUserPercent).div(
-            100 * 1e18
-        );
+        uint256 amountOwed = getValueOwed(currentUserPercent, liquidatedPool);
 
         addressToPercent[msg.sender] = 0;
-
         (bool userSent, ) = msg.sender.call{value: amountOwed}("");
         if (!userSent) revert("Withdraw failed");
 
@@ -273,13 +255,29 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     }
 
     /**
+     * Percentage calculations
+     */
+
+    function getPercentOf(uint256 x, uint256 y) public pure returns (uint256) {
+        return (x * 100e18) / y;
+    }
+
+    function getValueOwed(uint256 x, uint256 y) public pure returns (uint256) {
+        return (y * x) / (100 * 1e18);
+    }
+
+    /**
      * Easy getters
      */
 
     function getPoolSize() public view returns (uint256) {
         if (INITIAL_NFT_PRICE > poolSize) return poolSize;
         else {
-            return poolSize.sub(INITIAL_NFT_PRICE);
+            return poolSize - INITIAL_NFT_PRICE;
         }
+    }
+
+    function getState() public view returns (State) {
+        return state;
     }
 }

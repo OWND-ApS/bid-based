@@ -16,7 +16,7 @@ contract BidInfo is Script {
             vm.envAddress("BID_POOL_CONTRACT_ADDRESS")
         );
 
-        uint256 state = bidPool.poolSize();
+        uint256 state = uint256(bidPool.state());
         console.log(state);
 
         vm.stopBroadcast();
