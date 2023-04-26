@@ -29,7 +29,6 @@ contract BidTest is Test {
     }
 
     //Swap in and out tests
-
     function test_swapInPercent(uint256 a, uint256 b, uint256 c) public {
         //Can't be more than 1% of bid price which is 10 ether
         if (a <= 0 || b <= 0 || c <= 0) {
@@ -190,7 +189,7 @@ contract BidTest is Test {
             return;
         }
 
-        bidPool = new BidProtocol(address(1), 0, address(1), 5000, 4 ether);
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
         bidPool.init{value: 1 ether}();
 
         uint initialPool = bidPool.poolSize();
@@ -212,6 +211,47 @@ contract BidTest is Test {
         vm.prank(address(2));
         vm.expectRevert();
         bidPool.lpDeployMore{value: a}();
+    }
+
+    //Liquidation tests
+
+    function test_liquidationStateChange() public {
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool.init{value: 1 ether}();
+
+        assertEq(uint256(bidPool.state()), 1);
+
+        address aUser = vm.addr(1);
+        vm.deal(aUser, 10 ether);
+
+        vm.prank(aUser);
+        bidPool.swapIn{value: 1 ether}(message);
+
+        bidPool.lpPoolWithdraw(2 ether);
+        assertEq(bidPool.poolSize(), 0);
+
+        vm.prank(aUser);
+        bidPool.swapOut(message);
+        assertEq(uint256(bidPool.state()), 2);
+
+        vm.prank(aUser);
+        vm.expectRevert();
+        bidPool.swapOut(message);
+
+        vm.prank(aUser);
+        vm.expectRevert();
+        bidPool.swapIn{value: 1 ether}(message);
+
+        vm.prank(aUser);
+        vm.expectRevert();
+        bidPool.nftLiquidate{value: 1 ether}();
+
+        bidPool.nftLiquidate{value: 50 ether}();
+        assertEq(uint256(bidPool.state()), 3);
+        assertEq(bidPool.liquidatedPool(), 50 ether);
+
+        vm.expectRevert();
+        bidPool.nftLiquidate{value: 1 ether}();
     }
 
     //Not testing right now --> private
