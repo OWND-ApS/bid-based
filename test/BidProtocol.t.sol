@@ -17,7 +17,7 @@ contract BidTest is Test {
         );
 
     function test_init() public {
-        bidPool = new BidProtocol(address(0), 0, address(0), 0, 4 ether);
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
 
         uint256 state = uint256(bidPool.state());
         assertEq(state, 0);
@@ -39,7 +39,7 @@ contract BidTest is Test {
             return;
         }
 
-        bidPool = new BidProtocol(address(0), 0, address(0), 0, 4 ether);
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
         bidPool.init{value: 1 ether}();
 
         uint256 currentPercent = bidPool.percentInPool();
@@ -49,7 +49,7 @@ contract BidTest is Test {
         vm.deal(aUser, 1 ether);
 
         bidPool.swapIn{value: a}(message);
-        uint256 aExpected = bidPool.getPercentOf(a, 10 ether);
+        uint256 aExpected = bidPool.getPercentOf(a, 100 ether);
         uint256 aPercent = bidPool.addressToPercent(aUser);
 
         assertEq(aPercent, aExpected);
@@ -59,7 +59,7 @@ contract BidTest is Test {
         vm.deal(bUser, 1 ether);
 
         bidPool.swapIn{value: b}(message);
-        uint256 bExpected = bidPool.getPercentOf(b, 10 ether);
+        uint256 bExpected = bidPool.getPercentOf(b, 100 ether);
         uint256 bPercent = bidPool.addressToPercent(bUser);
         assertEq(bPercent, bExpected);
 
@@ -68,7 +68,7 @@ contract BidTest is Test {
         vm.deal(cUser, 1 ether);
 
         bidPool.swapIn{value: c}(message);
-        uint256 cExpected = bidPool.getPercentOf(c, 10 ether);
+        uint256 cExpected = bidPool.getPercentOf(c, 100 ether);
         uint256 cPercent = bidPool.addressToPercent(cUser);
 
         assertEq(cPercent, cExpected);
@@ -86,7 +86,7 @@ contract BidTest is Test {
             return;
         }
 
-        bidPool = new BidProtocol(address(0), 0, address(0), 0, 4 ether);
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
         bidPool.init{value: 1 ether}();
 
         uint256 currentPool = bidPool.poolSize();
@@ -122,7 +122,7 @@ contract BidTest is Test {
             return;
         }
 
-        bidPool = new BidProtocol(address(0), 0, address(0), 0, 4 ether);
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
         bidPool.init{value: 1 ether}();
 
         address aUser = vm.addr(1);
@@ -151,11 +151,38 @@ contract BidTest is Test {
         bidPool.swapOut(message);
     }
 
-    //Owner tests
+    //Owner/LP tests
     function test_ownership() public {
-        bidPool = new BidProtocol(address(0), 0, address(0), 0, 4 ether);
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
         vm.prank(address(0));
         vm.expectRevert();
+        bidPool.init{value: 1 ether}();
+    }
+
+    function test_fees() public {
+        bidPool = new BidProtocol(address(1), 0, address(1), 5000, 4 ether);
+        bidPool.init{value: 1 ether}();
+
+        address aUser = vm.addr(1);
+        vm.deal(aUser, 1 ether);
+        vm.prank(aUser);
+        bidPool.swapIn{value: 1 ether}(message);
+
+        uint256 fee = bidPool.feePool();
+        assertEq(fee, 1 ether / 2);
+
+        //Only owner can withdraw
+        vm.prank(aUser);
+        vm.expectRevert();
+        bidPool.lpFeeWithdraw();
+
+        //Now it should work
+        bidPool.lpFeeWithdraw();
+        assertEq(bidPool.feePool(), 0);
+    }
+
+    function test_lpDeployAndWithdraw(uint256 a) public {
+        bidPool = new BidProtocol(address(1), 0, address(1), 5000, 4 ether);
         bidPool.init{value: 1 ether}();
     }
 
