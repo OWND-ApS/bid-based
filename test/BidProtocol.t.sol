@@ -182,8 +182,36 @@ contract BidTest is Test {
     }
 
     function test_lpDeployAndWithdraw(uint256 a) public {
+        if (a <= 0) {
+            return;
+        }
+
+        if (a > address(this).balance) {
+            return;
+        }
+
         bidPool = new BidProtocol(address(1), 0, address(1), 5000, 4 ether);
         bidPool.init{value: 1 ether}();
+
+        uint initialPool = bidPool.poolSize();
+        bidPool.lpDeployMore{value: a}();
+        assertEq(bidPool.poolSize(), initialPool + a);
+
+        bidPool.lpPoolWithdraw(a);
+        assertEq(bidPool.poolSize(), initialPool);
+
+        //Can't withdraw more
+        vm.expectRevert();
+        bidPool.lpPoolWithdraw(2 ether);
+
+        //Only owner can deploy and withdraw
+        vm.prank(address(2));
+        vm.expectRevert();
+        bidPool.lpDeployMore{value: a}();
+
+        vm.prank(address(2));
+        vm.expectRevert();
+        bidPool.lpDeployMore{value: a}();
     }
 
     //Not testing right now --> private
