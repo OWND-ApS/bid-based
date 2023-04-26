@@ -166,12 +166,11 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
             "This swap will cause User to exceed max percent"
         );
         require(
-            totalPercent < percentInPool,
+            totalPercent <= percentInPool,
             "This swap will exceed percent in pool"
         );
 
         //All checks out, update pool and percent
-
         poolSize += swapInValue;
         percentInPool -= newPercent;
         addressToPercent[msg.sender] = totalPercent;
@@ -194,7 +193,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 feeValue = getValueOwed(SWAP_FEE, amountOwed);
         uint256 userValue = amountOwed - feeValue;
 
-        if (amountOwed < poolSize) {
+        if (amountOwed > poolSize) {
             state = State.PendingLiquidation;
             emit NftLiquidated();
         } else {
