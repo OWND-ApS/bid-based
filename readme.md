@@ -26,3 +26,9 @@ To run foundry tests make sure to either supply a valid message or change the Bi
 
 -   Finish audit
 -   Add proxy pattern to allow for upgradeability
+
+# Thank you🙏
+
+Thank you to everybody helping out with feedback/audit.
+
+-   @supanova
