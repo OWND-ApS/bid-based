@@ -28,6 +28,8 @@ contract BidTest is Test {
         assertEq(newState, 1);
     }
 
+    //Swap in and out tests
+
     function test_swapInPercent(uint256 a, uint256 b, uint256 c) public {
         //Can't be more than 1% of bid price which is 10 ether
         if (a <= 0 || b <= 0 || c <= 0) {
@@ -144,6 +146,17 @@ contract BidTest is Test {
         vm.prank(bUser);
         bidPool.swapOut(message);
         assertEq(bidPool.poolSize(), newPool - a - b);
+
+        vm.expectRevert();
+        bidPool.swapOut(message);
+    }
+
+    //Owner tests
+    function test_ownership() public {
+        bidPool = new BidProtocol(address(0), 0, address(0), 0, 4 ether);
+        vm.prank(address(0));
+        vm.expectRevert();
+        bidPool.init{value: 1 ether}();
     }
 
     //Not testing right now --> private

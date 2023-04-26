@@ -105,6 +105,22 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         poolSize += msg.value;
     }
 
+    function lpPoolWithdraw(uint256 amount) public onlyOwner nonReentrant {
+        require(amount <= poolSize, "Can't withdraw more than pool");
+        poolSize -= amount;
+        (bool lpSent, ) = msg.sender.call{value: amount}("");
+        if (!lpSent) revert("Withdraw failed");
+    }
+
+    function lpLiquidatedWithdraw() public isLiquidated onlyOwner nonReentrant {
+        require(percentInPool > 0, "No percent left in pool");
+        uint256 amountOwed = getValueOwed(percentInPool, liquidatedPool);
+
+        percentInPool = 0;
+        (bool lpSent, ) = msg.sender.call{value: amountOwed}("");
+        if (!lpSent) revert("Withdraw failed");
+    }
+
     function nftLiquidate() public payable onlyOwner {
         require(
             state == State.PendingLiquidation,
@@ -113,26 +129,6 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         require(msg.value > 0, "Liquidated amount needs to be > 0");
         liquidatedPool = msg.value;
         state = State.Liquidated;
-    }
-
-    function lpWithdraw() public isLiquidated onlyOwner nonReentrant {
-        uint256 amountOwed = 0;
-
-        if (poolSize > 0) amountOwed += poolSize;
-        if (percentInPool > 0) {
-            uint256 lpPoolOwed = getValueOwed(percentInPool, liquidatedPool);
-            amountOwed += lpPoolOwed;
-        }
-
-        if (amountOwed > 0) {
-            poolSize = 0;
-            percentInPool = 0;
-
-            (bool lpSent, ) = msg.sender.call{value: amountOwed}("");
-            if (!lpSent) revert("Withdraw failed");
-        } else {
-            revert("Withdraw failed");
-        }
     }
 
     /**
