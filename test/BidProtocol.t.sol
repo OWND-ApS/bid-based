@@ -308,6 +308,44 @@ contract BidTest is Test {
         bidPool.userWithdraw();
     }
 
+    function test_lpLiquidation() public {
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool.init{value: 1 ether}();
+
+        address aUser = vm.addr(1);
+        vm.deal(aUser, 10 ether);
+
+        vm.prank(aUser);
+        bidPool.swapIn{value: 1 ether}(message);
+
+        bidPool.lpPoolWithdraw(2 ether);
+        assertEq(bidPool.poolSize(), 0);
+
+        //State changes, since there's not enough capital in pool
+        vm.prank(aUser);
+        bidPool.swapOut(message);
+        assertEq(uint256(bidPool.state()), 2);
+
+        bidPool.nftLiquidate{value: 100 ether}();
+        assertEq(uint256(bidPool.state()), 3);
+
+        //User a gets what they're owed
+        vm.prank(aUser);
+        bidPool.userWithdraw();
+
+        //LP should get 99 ether from lpLiquidatedWithdraw
+        uint256 currentB = address(this).balance;
+        bidPool.lpLiquidatedWithdraw();
+        assertEq(address(this).balance, currentB + 99 ether);
+        assertEq(bidPool.percentInPool(), 0);
+        assertEq(bidPool.poolSize(), 0);
+
+        //Test only owner
+        vm.prank(aUser);
+        vm.expectRevert();
+        bidPool.lpLiquidatedWithdraw();
+    }
+
     //Not testing right now --> private
     function test_Percent(uint256 x, uint256 y) private {
         bidPool = new BidProtocol(address(0), 0, address(0), 0, 0);
