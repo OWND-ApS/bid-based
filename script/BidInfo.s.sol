@@ -19,6 +19,12 @@ contract BidInfo is Script {
         uint256 state = uint256(bidPool.state());
         console.log(state);
 
+        uint256 poolSize = uint256(bidPool.poolSize());
+        console.log(poolSize);
+
+        uint256 percent = uint256(bidPool.percentInPool());
+        console.log(percent);
+
         vm.stopBroadcast();
     }
 }

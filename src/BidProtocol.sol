@@ -161,7 +161,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 currentUserPercent = addressToPercent[msg.sender];
         require(
             currentUserPercent <= MAX_PERCENT_OWNERSHIP,
-            "User already owns max percent"
+            "You already own max percent"
         );
 
         //Calculate swap in value
@@ -178,7 +178,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
         require(
             totalPercent <= MAX_PERCENT_OWNERSHIP,
-            "This swap will cause User to exceed max percent"
+            "This swap will cause you to exceed max percent"
         );
         require(
             totalPercent <= percentInPool,
@@ -199,7 +199,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     //Note: For now we'll only allow swapping out 100% of stake
     function swapOut(Message calldata message) public isActive nonReentrant {
         uint256 currentUserPercent = addressToPercent[msg.sender];
-        require(currentUserPercent > 0, "User doesn't own any percent");
+        require(currentUserPercent > 0, "You don't own any percent");
 
         uint256 bidPrice = getBid(message);
         uint256 amountOwed = getValueOwed(currentUserPercent, bidPrice);
@@ -227,7 +227,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
     function userWithdraw() public isLiquidated nonReentrant {
         uint256 currentUserPercent = addressToPercent[msg.sender];
-        require(currentUserPercent > 0, "User doesn't own any percent");
+        require(currentUserPercent > 0, "You don't own any percent");
 
         uint256 amountOwed = getValueOwed(currentUserPercent, liquidatedPool);
 
