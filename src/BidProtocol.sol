@@ -57,6 +57,14 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 _SWAP_FEE,
         uint256 _INITIAL_NFT_PRICE
     ) ReservoirOracle(_BID_ORACLE) {
+        require(_NFT_CONTRACT != address(0), "Invalid NFT contract");
+        require(_BID_ORACLE != address(0), "Invalid oracle address");
+        require(_INITIAL_NFT_PRICE > 0, "Initial NFT price can't be 0");
+        require(
+            _SWAP_FEE >= 0 && _SWAP_FEE <= 1e4,
+            "Invalid swap fee percentage"
+        );
+
         NFT_CONTRACT = _NFT_CONTRACT;
         TOKEN_ID = _TOKEN_ID;
         BID_ORACLE = _BID_ORACLE;
@@ -225,31 +233,28 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
      */
 
     function getBid(Message calldata message) internal view returns (uint256) {
-        //DELETE:
-        return 10 ether;
+        // Construct the message id on-chain (using EIP-712 structured-data hashing)
+        bytes32 id = keccak256(
+            abi.encode(
+                keccak256(
+                    "ContractWideCollectionTopBidPrice(uint8 kind,uint256 twapSeconds,address contract)"
+                ),
+                PriceKind.SPOT,
+                86400,
+                NFT_CONTRACT
+            )
+        );
 
-        // // Construct the message id on-chain (using EIP-712 structured-data hashing)
-        // bytes32 id = keccak256(
-        //     abi.encode(
-        //         keccak256(
-        //             "ContractWideCollectionTopBidPrice(uint8 kind,uint256 twapSeconds,address contract)"
-        //         ),
-        //         PriceKind.SPOT,
-        //         86400,
-        //         NFT_CONTRACT
-        //     )
-        // );
+        // Validate the message
+        uint256 maxMessageAge = 5 minutes;
 
-        // // Validate the message
-        // uint256 maxMessageAge = 5 minutes;
+        if (!_verifyMessage(id, maxMessageAge, message)) {
+            revert("Bid Oracle failed");
+        }
 
-        // if (!_verifyMessage(id, maxMessageAge, message)) {
-        //     revert("Bid Oracle failed");
-        // }
+        (, uint256 price) = abi.decode(message.payload, (address, uint256));
 
-        // (, uint256 price) = abi.decode(message.payload, (address, uint256));
-
-        // return price;
+        return price;
     }
 
     /**

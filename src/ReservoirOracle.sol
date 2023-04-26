@@ -25,6 +25,7 @@ abstract contract ReservoirOracle {
     // --- Constructor ---
 
     constructor(address reservoirOracleAddress) {
+        require(reservoirOracleAddress != address(0), "Invalid oracle address");
         RESERVOIR_ORACLE_ADDRESS = reservoirOracleAddress;
     }
 
