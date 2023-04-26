@@ -31,6 +31,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     uint256 public poolSize;
     uint256 public percentInPool = 100 * 1e18;
     uint256 public liquidatedPool;
+    uint256 public feePool;
 
     mapping(address => uint256) public addressToPercent;
 
@@ -129,6 +130,16 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         if (!lpSent) revert("Withdraw failed");
     }
 
+    function lpFeeWithdraw() public onlyOwner nonReentrant {
+        //Q: This is necessary to avoid reentrancy attack?
+        uint256 feePoolCopy = feePool;
+        feePool = 0;
+        (bool lpSent, ) = msg.sender.call{value: feePoolCopy}("");
+        if (!lpSent) revert("Withdraw failed");
+    }
+
+    //When NFT is liquidated this function will be called with the amount of ETH it was sold to bid pool for (reason: blur don't allow smart contracts to accept bids)
+    //Aware that this is a centralization issue and will be fixed before public release of protocol
     function nftLiquidate() public payable onlyOwner {
         require(
             state == State.PendingLiquidation,
@@ -179,9 +190,8 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         percentInPool -= newPercent;
         addressToPercent[msg.sender] = totalPercent;
 
-        //Consider: save fee value and make owner withdraw at once?
-        (bool feeSent, ) = owner().call{value: feeValue}("");
-        if (!feeSent) revert("Fee transfer failed");
+        //Save fee
+        if (feeValue > 0) feePool += feeValue;
 
         emit SwapIn(msg.sender, msg.value, newPercent);
     }
@@ -205,11 +215,11 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
             percentInPool += currentUserPercent;
             addressToPercent[msg.sender] = 0;
 
+            //Save fee
+            if (feeValue > 0) feePool += feeValue;
+
             (bool userSent, ) = msg.sender.call{value: userValue}("");
             if (!userSent) revert("Swap out failed");
-
-            (bool feeSent, ) = owner().call{value: feeValue}("");
-            if (!feeSent) revert("Fee transfer failed");
 
             emit SwapOut(msg.sender, currentUserPercent, amountOwed);
         }
