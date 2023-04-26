@@ -69,9 +69,9 @@ contract BidTest is Test {
         bidPool.swapIn{value: c}(message);
         uint256 cExpected = bidPool.getPercentOf(c, 100 ether);
         uint256 cPercent = bidPool.addressToPercent(cUser);
-
         assertEq(cPercent, cExpected);
 
+        //Percent given is expected
         uint256 percentNow = bidPool.percentInPool();
         assertEq(currentPercent - (cPercent + bPercent + aPercent), percentNow);
     }
@@ -108,6 +108,7 @@ contract BidTest is Test {
 
         bidPool.swapIn{value: c}(message);
 
+        //Swap in updates poolSize
         uint256 poolNow = bidPool.poolSize();
         assertEq(poolNow - a - b - c, currentPool);
     }
@@ -138,6 +139,7 @@ contract BidTest is Test {
 
         uint256 newPool = bidPool.poolSize();
 
+        //Swap out matches expected value, since bidPrice hasn't changed
         vm.prank(aUser);
         bidPool.swapOut(message);
         assertEq(bidPool.poolSize(), newPool - a);
@@ -146,6 +148,7 @@ contract BidTest is Test {
         bidPool.swapOut(message);
         assertEq(bidPool.poolSize(), newPool - a - b);
 
+        //Can't swap out when address doesn't own any percent
         vm.expectRevert();
         bidPool.swapOut(message);
     }
@@ -167,6 +170,7 @@ contract BidTest is Test {
         vm.prank(aUser);
         bidPool.swapIn{value: 1 ether}(message);
 
+        //Fee value gets extracted to fee pool as expected
         uint256 fee = bidPool.feePool();
         assertEq(fee, 1 ether / 2);
 
@@ -175,7 +179,6 @@ contract BidTest is Test {
         vm.expectRevert();
         bidPool.lpFeeWithdraw();
 
-        //Now it should work
         bidPool.lpFeeWithdraw();
         assertEq(bidPool.feePool(), 0);
     }
@@ -192,10 +195,12 @@ contract BidTest is Test {
         bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
         bidPool.init{value: 1 ether}();
 
+        //Deploy more updates poolSize
         uint initialPool = bidPool.poolSize();
         bidPool.lpDeployMore{value: a}();
         assertEq(bidPool.poolSize(), initialPool + a);
 
+        //Withdraw works
         bidPool.lpPoolWithdraw(a);
         assertEq(bidPool.poolSize(), initialPool);
 
@@ -219,6 +224,7 @@ contract BidTest is Test {
         bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
         bidPool.init{value: 1 ether}();
 
+        //Init changes state from 0 to 1
         assertEq(uint256(bidPool.state()), 1);
 
         address aUser = vm.addr(1);
@@ -230,10 +236,12 @@ contract BidTest is Test {
         bidPool.lpPoolWithdraw(2 ether);
         assertEq(bidPool.poolSize(), 0);
 
+        //State changes when swap out > poolSize
         vm.prank(aUser);
         bidPool.swapOut(message);
         assertEq(uint256(bidPool.state()), 2);
 
+        //Can't swap in and out when state is 2
         vm.prank(aUser);
         vm.expectRevert();
         bidPool.swapOut(message);
@@ -242,16 +250,62 @@ contract BidTest is Test {
         vm.expectRevert();
         bidPool.swapIn{value: 1 ether}(message);
 
+        //Only owner can call nftLiquidate
         vm.prank(aUser);
         vm.expectRevert();
         bidPool.nftLiquidate{value: 1 ether}();
 
+        //Nft liquidate changes state to 3
         bidPool.nftLiquidate{value: 50 ether}();
         assertEq(uint256(bidPool.state()), 3);
         assertEq(bidPool.liquidatedPool(), 50 ether);
 
+        //Can only call nftLiquidate once
         vm.expectRevert();
         bidPool.nftLiquidate{value: 1 ether}();
+    }
+
+    function test_userLiquidation() public {
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool.init{value: 1 ether}();
+
+        address aUser = vm.addr(1);
+        vm.deal(aUser, 10 ether);
+
+        vm.prank(aUser);
+        bidPool.swapIn{value: 1 ether}(message);
+
+        bidPool.lpPoolWithdraw(2 ether);
+        assertEq(bidPool.poolSize(), 0);
+
+        //State changes, since there's not enough capital in pool
+        vm.prank(aUser);
+        bidPool.swapOut(message);
+        assertEq(uint256(bidPool.state()), 2);
+
+        //Can only withdraw when liquidated funds are returned
+        vm.prank(aUser);
+        vm.expectRevert();
+        bidPool.userWithdraw();
+
+        bidPool.nftLiquidate{value: 50 ether}();
+        assertEq(uint256(bidPool.state()), 3);
+
+        //Owner doesn't own any percent
+        vm.expectRevert();
+        bidPool.userWithdraw();
+
+        //User gets half back since nft was liquidated for 50% of getBid price when swapped in
+        uint256 currentB = aUser.balance;
+        vm.prank(aUser);
+        bidPool.userWithdraw();
+
+        assertEq(aUser.balance, currentB + 1 ether / 2);
+
+        //Can only withdraw once
+        vm.prank(aUser);
+        vm.expectRevert();
+        bidPool.userWithdraw();
     }
 
     //Not testing right now --> private
