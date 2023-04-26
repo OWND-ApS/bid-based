@@ -16,7 +16,7 @@ If the users request to swap out exceeds the swap out pool the contract will ent
 
 # Additional info
 
-The protocol uses Reservoir's offchain oracle to get top bid on an NFT collection. The endpoint uses to retrieve a valid signed message can be found here: [a link](https://docs.reservoir.tools/reference/getoraclecollectionstopbidv2)
+The protocol uses Reservoir's offchain oracle to get top bid on an NFT collection. The endpoint uses to retrieve a valid signed message can be found here: [reservoir top bid oracle](https://docs.reservoir.tools/reference/getoraclecollectionstopbidv2)
 
 # Testing
 
