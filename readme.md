@@ -31,4 +31,4 @@ To run foundry tests make sure to either supply a valid message or change the Bi
 
 Thank you to everybody helping out with feedback/audit.
 
--   @supanova
+-   @supernova
