@@ -25,6 +25,7 @@ abstract contract ReservoirOracle {
     // --- Constructor ---
 
     constructor(address reservoirOracleAddress) {
+    // @audit Lack of 0 address check 
         RESERVOIR_ORACLE_ADDRESS = reservoirOracleAddress;
     }
 
@@ -83,6 +84,57 @@ abstract contract ReservoirOracle {
             return false;
         }
 
+        // @audit Wrong EIP 712 implementation .
+// Use DOMAIN_SEPERATOR TYPEHASH 
+// bytes32 constant EIP712DOMAIN_TYPEHASH = keccak256(
+        // "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+    // );
+    //  bytes32 DOMAIN_SEPARATOR;
+
+    // function _hashDomain(EIP712Domain memory eip712Domain)
+    //     internal
+    //     pure
+    //     returns (bytes32)
+    // {
+    //     return keccak256(
+    //         abi.encode(
+    //             EIP712DOMAIN_TYPEHASH,
+    //             keccak256(bytes(eip712Domain.name)),
+    //             keccak256(bytes(eip712Domain.version)),
+    //             eip712Domain.chainId,
+    //             eip712Domain.verifyingContract
+    //         )
+    //     );
+    // }
+
+    // DOMAIN_SEPARATOR = _hashDomain(EIP712Domain({
+    //         name              : name,
+    //         version           : version,
+    //         chainId           : chainId,
+    //         verifyingContract : address(this)
+    //     }));
+
+    //  address signerAddress = ecrecover(
+    //         keccak256(
+    //             abi.encodePacked(
+    //                 "\x19Ethereum Signed Message:\n32",
+    //                 DOMAIN_SEPARATOR,
+    //                 keccak256(
+    //                     abi.encode(
+    //                         keccak256(
+    //                             "Message(bytes32 id,bytes payload,uint256 timestamp)"
+    //                         ),
+    //                         message.id,
+    //                         keccak256(message.payload),
+    //                         message.timestamp
+    //                     )
+    //                 )
+    //             )
+    //         ),
+    //         v,
+    //         r,
+    //         s
+    //     );
         address signerAddress = ecrecover(
             keccak256(
                 abi.encodePacked(

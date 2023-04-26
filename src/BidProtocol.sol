@@ -57,6 +57,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 _SWAP_FEE,
         uint256 _INITIAL_NFT_PRICE
     ) ReservoirOracle(_BID_ORACLE) {
+         // @audit Lack of input sanity checks
         NFT_CONTRACT = _NFT_CONTRACT;
         TOKEN_ID = _TOKEN_ID;
         BID_ORACLE = _BID_ORACLE;
@@ -83,6 +84,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     function updateReservoirOracleAddress(
         address newAddress
     ) public override onlyOwner {
+                // @audit 0 address check 
         RESERVOIR_ORACLE_ADDRESS = newAddress;
     }
 
@@ -92,6 +94,8 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
         uint256 percentOfNFTValue = getPercentOf(msg.value, INITIAL_NFT_PRICE);
         require(
+            // @audit  Wrong check 
+            // 25% of NFT value is INITIAL_NFT_PRICE * 25 * 1e18 / 100 * 1e18
             percentOfNFTValue >= 25 * 1e18,
             "Initial capital needs to be 25% or above of initial NFT value"
         );
@@ -204,6 +208,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
             (bool userSent, ) = msg.sender.call{value: userValue}("");
             if (!userSent) revert("Swap out failed");
 
+// @audit add check if feeValue > 0 , send value otherwise not
             (bool feeSent, ) = owner().call{value: feeValue}("");
             if (!feeSent) revert("Fee transfer failed");
 
@@ -231,7 +236,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     function getBid(Message calldata message) internal view returns (uint256) {
         //DELETE:
         return 10 ether;
-
+        // @audit Wrong 712 implementation . Use Domain Seperator .
         // // Construct the message id on-chain (using EIP-712 structured-data hashing)
         // bytes32 id = keccak256(
         //     abi.encode(
