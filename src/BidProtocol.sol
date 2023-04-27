@@ -277,7 +277,8 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
      */
 
     function _getBid(Message calldata message) internal view returns (uint256) {
-        //UNCOMMENT FOR EASY TESTING: return 100 ether;
+        //UNCOMMENT FOR EASY TESTING:
+        //return 100 ether;
 
         // Construct the message id on-chain (using EIP-712 structured-data hashing)
         bytes32 id = keccak256(
