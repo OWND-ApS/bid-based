@@ -9,8 +9,11 @@ import "src/ReservoirOracle.sol";
 
 //TODO: Make upgradeable through proxy contract
 contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
-    event NftLiquidated();
+    error WithdrawFailed(uint256 _amount);
+    error BidOracleFailed();
+    error SwapOutFailed(uint256 _amount);
 
+    event NftLiquidated();
     event SwapIn(address indexed user, uint256 amountIn, uint256 percentIn);
     event SwapOut(address indexed user, uint256 percentOut, uint256 amountOwed);
     event Withdrawn(
@@ -22,7 +25,10 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     uint256 private constant MAX_POOL_PERCENT = 100 * 1e18;
     uint256 private constant MAX_PERCENT_OWNERSHIP = 1 * 1e18;
 
-    address private immutable BID_ORACLE;
+    //CONSIDER: Making immutable and admin change function
+    uint256 private constant MAX_MESSAGE_AGE = 5 minutes;
+
+    address private immutable _BID_ORACLE;
     address public immutable NFT_CONTRACT;
     uint256 public immutable TOKEN_ID;
     uint256 public immutable SWAP_FEE;
@@ -54,13 +60,13 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     constructor(
         address _NFT_CONTRACT,
         uint256 _TOKEN_ID,
-        address _BID_ORACLE,
+        address BID_ORACLE,
         uint256 _SWAP_FEE,
         uint256 _INITIAL_NFT_PRICE
-    ) ReservoirOracle(_BID_ORACLE) {
+    ) ReservoirOracle(BID_ORACLE) {
         require(_NFT_CONTRACT != address(0), "Invalid NFT contract");
-        require(_BID_ORACLE != address(0), "Invalid oracle address");
-        require(_INITIAL_NFT_PRICE > 0, "Initial NFT price can't be 0");
+        require(BID_ORACLE != address(0), "Invalid oracle address");
+        require(_INITIAL_NFT_PRICE != 0, "Initial NFT price can't be 0");
         require(
             _SWAP_FEE >= 0 && _SWAP_FEE <= 1e4,
             "Invalid swap fee percentage"
@@ -68,11 +74,11 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
         NFT_CONTRACT = _NFT_CONTRACT;
         TOKEN_ID = _TOKEN_ID;
-        BID_ORACLE = _BID_ORACLE;
         INITIAL_NFT_PRICE = _INITIAL_NFT_PRICE;
-
         //Remember: Swap fee should be in bps format (10**2)
         SWAP_FEE = _SWAP_FEE * 1e16;
+
+        _BID_ORACLE = BID_ORACLE;
     }
 
     modifier isActive() {
@@ -92,12 +98,13 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     function updateReservoirOracleAddress(
         address newAddress
     ) public override onlyOwner {
+        require(newAddress != address(0), "Invalid reservoir oracle address");
         RESERVOIR_ORACLE_ADDRESS = newAddress;
     }
 
     function init() public payable onlyOwner {
         require(state == State.Inactive, "Pool is already active");
-        require(msg.value > 0, "Initial capital can't be 0");
+        require(msg.value != 0, "Initial capital can't be 0");
 
         uint256 percentOfNFTValue = getPercentOf(msg.value, INITIAL_NFT_PRICE);
         require(
@@ -110,7 +117,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     }
 
     function lpDeployMore() public payable onlyOwner isActive {
-        require(msg.value > 0, "Capital can't be 0");
+        require(msg.value != 0, "Capital can't be 0");
         poolSize += msg.value;
     }
 
@@ -118,16 +125,16 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         require(amount <= poolSize, "Can't withdraw more than pool");
         poolSize -= amount;
         (bool lpSent, ) = msg.sender.call{value: amount}("");
-        if (!lpSent) revert("Withdraw failed");
+        if (!lpSent) revert WithdrawFailed(amount);
     }
 
     function lpLiquidatedWithdraw() public isLiquidated onlyOwner nonReentrant {
-        require(percentInPool > 0, "No percent left in pool");
+        require(percentInPool != 0, "No percent left in pool");
         uint256 amountOwed = getValueOwed(percentInPool, liquidatedPool);
 
         percentInPool = 0;
         (bool lpSent, ) = msg.sender.call{value: amountOwed}("");
-        if (!lpSent) revert("Withdraw failed");
+        if (!lpSent) revert WithdrawFailed(amountOwed);
     }
 
     function lpFeeWithdraw() public onlyOwner nonReentrant {
@@ -135,7 +142,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 feePoolCopy = feePool;
         feePool = 0;
         (bool lpSent, ) = msg.sender.call{value: feePoolCopy}("");
-        if (!lpSent) revert("Withdraw failed");
+        if (!lpSent) revert WithdrawFailed(feePoolCopy);
     }
 
     //When NFT is liquidated this function will be called with the amount of ETH it was sold to bid pool for (reason: blur don't allow smart contracts to accept bids)
@@ -145,7 +152,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
             state == State.PendingLiquidation,
             "Pool is not expecting liquidation"
         );
-        require(msg.value > 0, "Liquidated amount needs to be > 0");
+        require(msg.value != 0, "Liquidated amount less than 0");
         liquidatedPool = msg.value;
         state = State.Liquidated;
     }
@@ -155,8 +162,8 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
      */
 
     function swapIn(Message calldata message) public payable isActive {
-        require(percentInPool > 0, "No percent left in pool");
-        require(msg.value > 0, "Value needs to be above 0");
+        require(percentInPool != 0, "No percent left in pool");
+        require(msg.value != 0, "Value needs to be above 0");
 
         uint256 currentUserPercent = addressToPercent[msg.sender];
         require(
@@ -169,20 +176,20 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 swapInValue = msg.value - feeValue;
 
         //Get bid price in wei from Reservoir oracle
-        uint256 bidPrice = getBid(message);
+        uint256 bidPrice = _getBid(message);
 
         //Calculate percent without decimals
         uint256 newPercent = getPercentOf(swapInValue, bidPrice);
-        require(newPercent > 0, "Value is below minimum swap in value");
+        require(newPercent != 0, "Value is below minimum swap in value");
         uint256 totalPercent = currentUserPercent + newPercent;
 
         require(
             totalPercent <= MAX_PERCENT_OWNERSHIP,
-            "This swap will cause you to exceed max percent"
+            "This swap will exceed max percent"
         );
         require(
             totalPercent <= percentInPool,
-            "This swap will exceed percent in pool"
+            "This swap will exceed percent left"
         );
 
         //All checks out, update pool and percent
@@ -199,9 +206,9 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     //Note: For now we'll only allow swapping out 100% of stake
     function swapOut(Message calldata message) public isActive nonReentrant {
         uint256 currentUserPercent = addressToPercent[msg.sender];
-        require(currentUserPercent > 0, "You don't own any percent");
+        require(currentUserPercent != 0, "You don't own any percent");
 
-        uint256 bidPrice = getBid(message);
+        uint256 bidPrice = _getBid(message);
         uint256 amountOwed = getValueOwed(currentUserPercent, bidPrice);
 
         uint256 feeValue = getValueOwed(SWAP_FEE, amountOwed);
@@ -219,7 +226,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
             if (feeValue > 0) feePool += feeValue;
 
             (bool userSent, ) = msg.sender.call{value: userValue}("");
-            if (!userSent) revert("Swap out failed");
+            if (!userSent) revert SwapOutFailed(userValue);
 
             emit SwapOut(msg.sender, currentUserPercent, amountOwed);
         }
@@ -227,46 +234,15 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
     function userWithdraw() public isLiquidated nonReentrant {
         uint256 currentUserPercent = addressToPercent[msg.sender];
-        require(currentUserPercent > 0, "You don't own any percent");
+        require(currentUserPercent != 0, "You don't own any percent");
 
         uint256 amountOwed = getValueOwed(currentUserPercent, liquidatedPool);
 
         addressToPercent[msg.sender] = 0;
         (bool userSent, ) = msg.sender.call{value: amountOwed}("");
-        if (!userSent) revert("Withdraw failed");
+        if (!userSent) revert WithdrawFailed(amountOwed);
 
         emit Withdrawn(msg.sender, currentUserPercent, amountOwed);
-    }
-
-    /**
-     * Returns bid price from signed message
-     */
-
-    function getBid(Message calldata message) internal view returns (uint256) {
-        //UNCOMMENT FOR EASY TESTING: return 100 ether;
-
-        // Construct the message id on-chain (using EIP-712 structured-data hashing)
-        bytes32 id = keccak256(
-            abi.encode(
-                keccak256(
-                    "ContractWideCollectionTopBidPrice(uint8 kind,uint256 twapSeconds,address contract)"
-                ),
-                PriceKind.SPOT,
-                86400,
-                NFT_CONTRACT
-            )
-        );
-
-        // Validate the message
-        uint256 maxMessageAge = 5 minutes;
-
-        if (!_verifyMessage(id, maxMessageAge, message)) {
-            revert("Bid Oracle failed");
-        }
-
-        (, uint256 price) = abi.decode(message.payload, (address, uint256));
-
-        return price;
     }
 
     /**
@@ -294,5 +270,36 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
     function getState() public view returns (State) {
         return state;
+    }
+
+    /**
+     * Returns bid price from signed message
+     */
+
+    function _getBid(Message calldata message) internal view returns (uint256) {
+        //UNCOMMENT FOR EASY TESTING: return 100 ether;
+
+        // Construct the message id on-chain (using EIP-712 structured-data hashing)
+        bytes32 id = keccak256(
+            abi.encode(
+                keccak256(
+                    "ContractWideCollectionTopBidPrice(uint8 kind,uint256 twapSeconds,address contract)"
+                ),
+                PriceKind.SPOT,
+                86_400,
+                NFT_CONTRACT
+            )
+        );
+
+        // Validate the message
+        uint256 maxMessageAge = MAX_MESSAGE_AGE;
+
+        if (!_verifyMessage(id, maxMessageAge, message)) {
+            revert BidOracleFailed();
+        }
+
+        (, uint256 price) = abi.decode(message.payload, (address, uint256));
+
+        return price;
     }
 }
