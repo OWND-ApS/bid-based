@@ -1,0 +1,36 @@
+{
+  "transactions": [
+    {
+      "hash": "0xe7bdec66474f306e6589477142724ae78134db95f1045ceddcc4852417aa5cb2",
+      "transactionType": "CALL",
+      "contractName": null,
+      "contractAddress": "0xD88106cE6F3b0Fec5f318B67898FB787F55cCD3d",
+      "function": null,
+      "arguments": null,
+      "rpc": "https://polygon-mumbai.g.alchemy.com/v2/z7Ojkeej-9t8FjugRCozAr_UT99z34wT",
+      "transaction": {
+        "type": "0x02",
+        "from": "0x512ddebf60651225695dbc1bcf53c5e4b1ac8dcd",
+        "to": "0xd88106ce6f3b0fec5f318b67898fb787f55ccd3d",
+        "gas": "0x184aa",
+        "value": "0x2c68af0bb140000",
+        "data": "0xe1c7392a",
+        "nonce": "0x2",
+        "accessList": []
+      },
+      "additionalContracts": [],
+      "isFixedGasLimit": false
+    }
+  ],
+  "receipts": [],
+  "libraries": [],
+  "pending": [
+    "0xe7bdec66474f306e6589477142724ae78134db95f1045ceddcc4852417aa5cb2"
+  ],
+  "path": "/Users/ankerbachryhl/Documents/code/web3/cloutApp/bid_based/broadcast/BidInit.s.sol/80001/run-latest.json",
+  "returns": {},
+  "timestamp": 1682723063,
+  "chain": 80001,
+  "multi": false,
+  "commit": "4fb93db"
+}

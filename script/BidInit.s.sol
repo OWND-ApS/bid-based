@@ -18,7 +18,7 @@ contract BidInit is Script {
 
         uint256 state = uint256(bidPool.state());
         console.log(state);
-        bidPool.init{value: 1 ether}();
+        bidPool.init{value: 200000000000000000 wei}();
 
         vm.stopBroadcast();
     }
