@@ -7,7 +7,6 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "src/ReservoirOracle.sol";
 
-//TODO: Make upgradeable through proxy contract
 contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     error WithdrawFailed(uint256 _amount);
     error BidOracleFailed();
@@ -24,9 +23,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
     uint256 private constant MAX_POOL_PERCENT = 100 * 1e18;
     uint256 private constant MAX_PERCENT_OWNERSHIP = 1 * 1e18;
-
-    //CONSIDER: Making immutable and admin change function
-    uint256 private constant MAX_MESSAGE_AGE = 5 minutes;
+    uint256 public MAX_MESSAGE_AGE = 5 minutes;
 
     address private immutable _BID_ORACLE;
     address public immutable NFT_CONTRACT;
@@ -102,6 +99,11 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         RESERVOIR_ORACLE_ADDRESS = newAddress;
     }
 
+    function updateMaxMessageAge(uint256 maxAge) public onlyOwner {
+        require(maxAge > 60, "Minimum is 1 minute");
+        MAX_MESSAGE_AGE = maxAge;
+    }
+
     function init() public payable onlyOwner {
         require(state == State.Inactive, "Pool is already active");
         require(msg.value != 0, "Initial capital can't be 0");
@@ -138,7 +140,6 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     }
 
     function lpFeeWithdraw() public onlyOwner nonReentrant {
-        //Q: This is necessary to avoid reentrancy attack?
         uint256 feePoolCopy = feePool;
         feePool = 0;
         (bool lpSent, ) = msg.sender.call{value: feePoolCopy}("");
@@ -261,13 +262,6 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
      * Easy getters
      */
 
-    function getPoolSize() public view returns (uint256) {
-        if (INITIAL_NFT_PRICE > poolSize) return poolSize;
-        else {
-            return poolSize - INITIAL_NFT_PRICE;
-        }
-    }
-
     function getState() public view returns (State) {
         return state;
     }
@@ -278,7 +272,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
     function _getBid(Message calldata message) internal view returns (uint256) {
         //UNCOMMENT FOR EASY TESTING:
-        //return 100 ether;
+        return 100 ether;
 
         // Construct the message id on-chain (using EIP-712 structured-data hashing)
         bytes32 id = keccak256(

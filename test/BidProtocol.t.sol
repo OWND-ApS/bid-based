@@ -113,7 +113,7 @@ contract BidTest is Test {
         assertEq(poolNow - a - b - c, currentPool);
     }
 
-    function test_swapOut(uint256 a, uint256 b) public {
+    function test_swapOutPoolsize(uint256 a, uint256 b) public {
         //Can't be more than 1% of bid price which is 10 ether
         if (a <= 0 || b <= 0) {
             return;
@@ -153,12 +153,74 @@ contract BidTest is Test {
         bidPool.swapOut(message);
     }
 
+    function test_swapOutPercent(uint256 a, uint256 b) public {
+        //Can't be more than 1% of bid price which is 10 ether
+        if (a <= 0 || b <= 0) {
+            return;
+        }
+        if (a > 1e17 || b > 1e17) {
+            return;
+        }
+
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool.init{value: 1 ether}();
+
+        address aUser = vm.addr(1);
+        vm.deal(aUser, 1 ether);
+
+        vm.prank(aUser);
+        bidPool.swapIn{value: a}(message);
+
+        uint256 aPercent = bidPool.addressToPercent(aUser);
+        uint poolPercent = bidPool.percentInPool();
+        assertEq(poolPercent + aPercent, 100 * 1e18);
+
+        //Swap out gives percentage back
+        vm.prank(aUser);
+        bidPool.swapOut(message);
+        assertEq(bidPool.percentInPool(), 100 * 1e18);
+
+        aPercent = bidPool.addressToPercent(aUser);
+        assertEq(aPercent, 0);
+    }
+
     //Owner/LP tests
     function test_ownership() public {
         bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
         vm.prank(address(0));
         vm.expectRevert();
         bidPool.init{value: 1 ether}();
+
+        vm.prank(address(0));
+        vm.expectRevert();
+        bidPool.transferOwnership(address(1));
+
+        vm.prank(address(0));
+        vm.expectRevert();
+        bidPool.updateMaxMessageAge(120);
+    }
+
+    function test_updateValues() public {
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        address reservoir = bidPool.RESERVOIR_ORACLE_ADDRESS();
+        assertEq(reservoir, address(1));
+
+        bidPool.updateReservoirOracleAddress(address(2));
+        assertEq(bidPool.RESERVOIR_ORACLE_ADDRESS(), address(2));
+
+        vm.prank(address(0));
+        vm.expectRevert();
+        bidPool.updateReservoirOracleAddress(address(2));
+
+        uint maxAge = bidPool.MAX_MESSAGE_AGE();
+        assertEq(maxAge, 5 minutes);
+
+        vm.prank(address(0));
+        vm.expectRevert();
+        bidPool.updateMaxMessageAge(120);
+
+        bidPool.updateMaxMessageAge(120);
+        assertEq(bidPool.MAX_MESSAGE_AGE(), 2 minutes);
     }
 
     function test_fees() public {
@@ -179,8 +241,10 @@ contract BidTest is Test {
         vm.expectRevert();
         bidPool.lpFeeWithdraw();
 
+        uint256 currentB = address(this).balance;
         bidPool.lpFeeWithdraw();
         assertEq(bidPool.feePool(), 0);
+        assertEq(address(this).balance, currentB + fee);
     }
 
     function test_lpDeployAndWithdraw(uint256 a) public {
@@ -344,6 +408,75 @@ contract BidTest is Test {
         vm.prank(aUser);
         vm.expectRevert();
         bidPool.lpLiquidatedWithdraw();
+    }
+
+    //Private for now
+    function test_percentSimulation() private {
+        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool.init{value: 1 ether}();
+
+        address aUser = vm.addr(1);
+        vm.deal(aUser, 100 ether);
+
+        address bUser = vm.addr(2);
+        vm.deal(bUser, 100 ether);
+
+        address cUser = vm.addr(3);
+        vm.deal(cUser, 100 ether);
+
+        vm.prank(aUser);
+        vm.expectRevert(bytes("Value needs to be above 0"));
+        bidPool.swapIn{value: 0}(message);
+
+        vm.prank(aUser);
+        bidPool.swapIn{value: 50 ether}(message);
+
+        //Expct more than 50%
+        vm.prank(bUser);
+        vm.expectRevert(bytes("This swap will exceed percent left"));
+        bidPool.swapIn{value: 51 ether}(message);
+
+        vm.prank(bUser);
+        bidPool.swapIn{value: 50 ether}(message);
+        assertEq(bidPool.poolSize(), 101 ether);
+        assertEq(bidPool.percentInPool(), 0);
+
+        //Over 100% can't be given out
+        vm.prank(cUser);
+        vm.expectRevert(bytes("No percent left in pool"));
+        bidPool.swapIn{value: 1 ether}(message);
+
+        //Active liquidation
+        bidPool.lpPoolWithdraw(101 ether);
+        assertEq(bidPool.poolSize(), 0);
+
+        //State changes, since there's not enough capital in pool
+        vm.prank(aUser);
+        bidPool.swapOut(message);
+        assertEq(uint256(bidPool.state()), 2);
+
+        bidPool.nftLiquidate{value: 8 ether}();
+        assertEq(uint256(bidPool.state()), 3);
+
+        //C doesn't own any percent
+        vm.prank(cUser);
+        vm.expectRevert();
+        bidPool.userWithdraw();
+
+        //Owner doesn't have anything percent in pool
+        vm.expectRevert(bytes("No percent left in pool"));
+        bidPool.lpLiquidatedWithdraw();
+
+        //C and B get 50% of value back
+        uint256 aBal = aUser.balance;
+        vm.prank(aUser);
+        bidPool.userWithdraw();
+        assertEq(aUser.balance, aBal + 4 ether);
+
+        uint256 bBal = bUser.balance;
+        vm.prank(bUser);
+        bidPool.userWithdraw();
+        assertEq(bUser.balance, bBal + 4 ether);
     }
 
     //Not testing right now --> private
