@@ -272,13 +272,12 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         return state;
     }
 
-    function getEthMaticPrice() public pure returns (int256) {
+    function getEthMaticPrice() public view returns (int256) {
         //Get eth price of 1 MATIC
-        //(,int256 price,,,) = priceFeed.latestRoundData();
-        int256 price = 532000000000000;
+        (, int256 price, , , ) = priceFeed.latestRoundData();
 
-        //Convert to 1 ETH = x MATIC (e.g. 1800 Matic = 1 ETH). With two decimals.
-        return (1e22 / price) / 1e4;
+        //Convert to 1 ETH = x MATIC (e.g. 1800 Matic = 1 ETH). With four decimals.
+        return 1e22 / price;
     }
 
     /**
@@ -297,18 +296,19 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
                 NFT_CONTRACT
             )
         );
-
         // Validate the message
         uint256 maxMessageAge = MAX_MESSAGE_AGE;
-
         if (!_verifyMessage(id, maxMessageAge, message)) {
             revert BidOracleFailed();
         }
-
         (, uint256 price) = abi.decode(message.payload, (address, uint256));
+
         uint256 conversion = uint256(getEthMaticPrice());
         if (conversion == 0) revert BidOracleFailed();
 
-        return price * conversion;
+        uint256 convertedPrice = (price * conversion) / 1e4;
+        if (convertedPrice == 0) revert BidOracleFailed();
+
+        return convertedPrice;
     }
 }

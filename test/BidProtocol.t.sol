@@ -17,7 +17,14 @@ contract BidTest is Test {
         );
 
     function test_init() public {
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
 
         uint256 state = uint256(bidPool.state());
         assertEq(state, 0);
@@ -38,7 +45,14 @@ contract BidTest is Test {
             return;
         }
 
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         uint256 currentPercent = bidPool.percentInPool();
@@ -85,7 +99,14 @@ contract BidTest is Test {
             return;
         }
 
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         uint256 currentPool = bidPool.poolSize();
@@ -122,7 +143,14 @@ contract BidTest is Test {
             return;
         }
 
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         address aUser = vm.addr(1);
@@ -162,7 +190,14 @@ contract BidTest is Test {
             return;
         }
 
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         address aUser = vm.addr(1);
@@ -186,7 +221,14 @@ contract BidTest is Test {
 
     //Owner/LP tests
     function test_ownership() public {
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         vm.prank(address(0));
         vm.expectRevert();
         bidPool.init{value: 1 ether}();
@@ -201,7 +243,14 @@ contract BidTest is Test {
     }
 
     function test_updateValues() public {
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         address reservoir = bidPool.RESERVOIR_ORACLE_ADDRESS();
         assertEq(reservoir, address(1));
 
@@ -224,7 +273,14 @@ contract BidTest is Test {
     }
 
     function test_fees() public {
-        bidPool = new BidProtocol(address(1), 0, address(1), 5000, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            5000,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         address aUser = vm.addr(1);
@@ -256,7 +312,14 @@ contract BidTest is Test {
             return;
         }
 
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         //Deploy more updates poolSize
@@ -285,7 +348,14 @@ contract BidTest is Test {
     //Liquidation tests
 
     function test_liquidationStateChange() public {
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         //Init changes state from 0 to 1
@@ -330,7 +400,14 @@ contract BidTest is Test {
     }
 
     function test_userLiquidation() public {
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         address aUser = vm.addr(1);
@@ -373,7 +450,14 @@ contract BidTest is Test {
     }
 
     function test_lpLiquidation() public {
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         address aUser = vm.addr(1);
@@ -412,7 +496,14 @@ contract BidTest is Test {
 
     //Private for now
     function test_percentSimulation() private {
-        bidPool = new BidProtocol(address(1), 0, address(1), 0, 4 ether);
+        bidPool = new BidProtocol(
+            address(1),
+            0,
+            address(1),
+            address(1),
+            0,
+            4 ether
+        );
         bidPool.init{value: 1 ether}();
 
         address aUser = vm.addr(1);
@@ -481,7 +572,7 @@ contract BidTest is Test {
 
     //Not testing right now --> private
     function test_Percent(uint256 x, uint256 y) private {
-        bidPool = new BidProtocol(address(0), 0, address(0), 0, 0);
+        bidPool = new BidProtocol(address(0), 0, address(1), address(1), 0, 0);
 
         if (x == 0 || y == 0) {
             return;
