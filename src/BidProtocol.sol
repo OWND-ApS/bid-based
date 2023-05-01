@@ -121,8 +121,8 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
 
         uint256 percentOfNFTValue = getPercentOf(msg.value, INITIAL_NFT_PRICE);
         require(
-            percentOfNFTValue >= 25 * 1e18,
-            "Initial capital needs to be 25% or above of initial NFT value"
+            percentOfNFTValue >= 5 * 1e18,
+            "Initial capital needs to be 5% or above of initial NFT value"
         );
 
         poolSize = msg.value;
