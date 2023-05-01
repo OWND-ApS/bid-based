@@ -110,6 +110,11 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         MAX_MESSAGE_AGE = maxAge;
     }
 
+    function updatePriceFeed(address newAddress) public onlyOwner {
+        require(newAddress != address(0), "Invalid price oracle address");
+        priceFeed = AggregatorV3Interface(newAddress);
+    }
+
     function init() public payable onlyOwner {
         require(state == State.Inactive, "Pool is already active");
         require(msg.value != 0, "Initial capital can't be 0");
