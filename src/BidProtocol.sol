@@ -4,6 +4,7 @@ pragma solidity ^0.8.13;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 import "src/ReservoirOracle.sol";
 
@@ -20,6 +21,8 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         uint256 percentOut,
         uint256 amountOwed
     );
+
+    AggregatorV3Interface internal priceFeed;
 
     uint256 private constant MAX_POOL_PERCENT = 100 * 1e18;
     uint256 private constant MAX_PERCENT_OWNERSHIP = 1 * 1e18;
@@ -58,11 +61,13 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         address _NFT_CONTRACT,
         uint256 _TOKEN_ID,
         address BID_ORACLE,
+        address _PRICE_ORACLE,
         uint256 _SWAP_FEE,
         uint256 _INITIAL_NFT_PRICE
     ) ReservoirOracle(BID_ORACLE) {
         require(_NFT_CONTRACT != address(0), "Invalid NFT contract");
-        require(BID_ORACLE != address(0), "Invalid oracle address");
+        require(BID_ORACLE != address(0), "Invalid nft oracle address");
+        require(_PRICE_ORACLE != address(0), "Invalid price oracle address");
         require(_INITIAL_NFT_PRICE != 0, "Initial NFT price can't be 0");
         require(
             _SWAP_FEE >= 0 && _SWAP_FEE <= 1e4,
@@ -76,6 +81,7 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         SWAP_FEE = _SWAP_FEE * 1e16;
 
         _BID_ORACLE = BID_ORACLE;
+        priceFeed = AggregatorV3Interface(_PRICE_ORACLE);
     }
 
     modifier isActive() {
@@ -140,7 +146,6 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
     }
 
     function lpFeeWithdraw() public onlyOwner nonReentrant {
-        require(feePool != 0, "No fee in pool");
         uint256 feePoolCopy = feePool;
         feePool = 0;
         (bool lpSent, ) = msg.sender.call{value: feePoolCopy}("");
@@ -267,11 +272,20 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         return state;
     }
 
+    function getEthMaticPrice() public pure returns (int256) {
+        //Get eth price of 1 MATIC
+        //(,int256 price,,,) = priceFeed.latestRoundData();
+        int256 price = 532000000000000;
+
+        //Convert to 1 ETH = x MATIC (e.g. 1800 Matic = 1 ETH). With two decimals.
+        return (1e22 / price) / 1e4;
+    }
+
     /**
      * Returns bid price from signed message
      */
 
-    function _getBid(Message calldata message) internal view returns (uint256) {
+    function _getBid(Message calldata message) public view returns (uint256) {
         // Construct the message id on-chain (using EIP-712 structured-data hashing)
         bytes32 id = keccak256(
             abi.encode(
@@ -292,7 +306,9 @@ contract BidProtocol is Ownable, ReservoirOracle, ReentrancyGuard {
         }
 
         (, uint256 price) = abi.decode(message.payload, (address, uint256));
+        uint256 conversion = uint256(getEthMaticPrice());
+        if (conversion == 0) revert BidOracleFailed();
 
-        return price;
+        return price * conversion;
     }
 }
